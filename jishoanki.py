@@ -1,6 +1,39 @@
 import customtkinter as ctk
 import requests
 
+app = ctk.CTk()
+app.title("Jisho to Anki")
+app.geometry("500x500")
+
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("blue")
+
+# Input field
+entry = ctk.CTkEntry(app, width=400, font=("Arial", 18), placeholder_text="Enter Romaji")
+entry.pack(pady=20)
+
+# Result label
+result_label = ctk.CTkLabel(app, text="", font=("Arial", 16))
+result_label.pack(pady=10)
+
+# Fetch Anki deck names
+def fetch_deck_names():
+    payload = {"action": "deckNames", "version": 6}
+    try:
+        response = requests.post("http://localhost:8765", json=payload)
+        return response.json().get("result", [])
+    except:
+        return []
+
+raw_decks = fetch_deck_names()
+decks = ["Select deck"] + raw_decks
+selected_deck = ctk.StringVar(value="Select deck")
+
+# Deck dropdown
+deck_dropdown = ctk.CTkOptionMenu(app, values=decks, variable=selected_deck, font=("Arial", 18))
+deck_dropdown.pack(pady=10)
+
+# Jisho search
 def search_jisho(word):
     url = f"https://jisho.org/api/v1/search/words?keyword={word}"
     response = requests.get(url)
@@ -21,13 +54,18 @@ def search_jisho(word):
     else:
         return None, None, None
 
+# Add to Anki
 def add_to_anki(hiragana, romaji, meaning):
+    deck = selected_deck.get()
+    if deck == "Select deck":
+        return {"error": "Please select a valid deck."}
+
     payload = {
         "action": "addNote",
         "version": 6,
         "params": {
             "note": {
-                "deckName": "Japanese Self::Words",
+                "deckName": deck,
                 "modelName": "Japanese Words",
                 "fields": {
                     "hiragana": hiragana,
@@ -41,26 +79,15 @@ def add_to_anki(hiragana, romaji, meaning):
             }
         }
     }
-    response = requests.post("http://localhost:8765", json=payload)
-    return response.json()
+    try:
+        response = requests.post("http://localhost:8765", json=payload)
+        return response.json()
+    except:
+        return {"error": "Failed to connect to AnkiConnect"}
 
-# ---- GUI Setup ----
+last_result = {"reading": None, "romaji": None, "meaning": None}
 
-ctk.set_appearance_mode("system")
-ctk.set_default_color_theme("blue")
-
-app = ctk.CTk()
-app.geometry("600x400")
-app.title("Jisho → Anki")
-
-entry = ctk.CTkEntry(app, placeholder_text="Enter Romaji", font=("Arial", 18))
-entry.pack(pady=20)
-
-result_label = ctk.CTkLabel(app, text="", justify="left", font=("Arial", 18), wraplength=550, anchor="w")
-result_label.pack(pady=10)
-
-last_result = {"reading": None, "romaji": None, "meaning": None}  # Cache for Ctrl+Enter
-
+# Button actions
 def on_search():
     romaji = entry.get().strip()
     if not romaji:
@@ -68,19 +95,17 @@ def on_search():
         add_button.configure(state="disabled")
         return
 
-    result_label.configure(
-        text = "⏳ Loading..."
-        # text="✅ Kanji/Kana: ⏳ Loading...\n📖 Hiragana: ⏳ Loading...\n💡 Meaning: ⏳ Loading..."
-    )
+    result_label.configure(text="⏳ Loading...")
     add_button.configure(state="disabled")
-    
+
     app.after(100, lambda: perform_search(romaji))
 
 def perform_search(romaji):
     kanji, reading, meaning = search_jisho(romaji)
     if kanji:
         result_label.configure(
-            text=f"✅ Kanji/Kana: {kanji}\n📖 Hiragana: {reading}\n💡 Meaning: {meaning}"
+            text=f"Kanji/Kana: {kanji}\nHiragana: {reading}\nMeaning: {meaning}",
+            justify="left"
         )
         last_result.update({"reading": reading, "romaji": romaji, "meaning": meaning})
         add_button.configure(state="normal")
@@ -88,23 +113,18 @@ def perform_search(romaji):
         result_label.configure(text="❌ Word not found on Jisho.")
         last_result.update({"reading": None, "romaji": None, "meaning": None})
 
-
-
 def on_add(hiragana, romaji, meaning):
     result_label.configure(text="⏳ Adding to Anki...")
     add_button.configure(state="disabled")
-
     app.after(100, lambda: perform_add(hiragana, romaji, meaning))
 
 def perform_add(hiragana, romaji, meaning):
     result = add_to_anki(hiragana, romaji, meaning)
-    if 'error' in result and result['error']:
-        result_label.configure(text=f"⚠️ Anki Error: {result['error']}")
+    if result.get("error"):
+        result_label.configure(text=f"⚠️ {result['error']}")
     else:
         result_label.configure(text="✅ Added to Anki.")
-
     add_button.configure(state="normal")
-
 
 def on_add_key():
     if all(last_result.values()):
@@ -112,13 +132,16 @@ def on_add_key():
     else:
         result_label.configure(text="❌ Nothing to add. Search first.")
 
+# Buttons
 search_button = ctk.CTkButton(app, text="Search", command=on_search, font=("Arial", 18))
-search_button.pack(pady=10)
+search_button.pack(pady=(10, 5))
 
-add_button = ctk.CTkButton(app, text="Add to Anki", command=on_add_key, font=("Arial", 18), state="disabled")
+add_button = ctk.CTkButton(app, text="Add to Anki", command=lambda: on_add(
+    last_result["reading"], last_result["romaji"], last_result["meaning"]
+), font=("Arial", 18), state="disabled")
 add_button.pack(pady=10)
 
-# ---- Key Bindings ----
+# Keyboard shortcuts
 app.bind("<Return>", lambda event: on_search())
 app.bind("<Control-Return>", lambda event: on_add_key())
 
