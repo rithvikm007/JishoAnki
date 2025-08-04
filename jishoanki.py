@@ -59,35 +59,67 @@ entry.pack(pady=20)
 result_label = ctk.CTkLabel(app, text="", justify="left", font=("Arial", 18), wraplength=550, anchor="w")
 result_label.pack(pady=10)
 
-add_button = None
+last_result = {"reading": None, "romaji": None, "meaning": None}  # Cache for Ctrl+Enter
 
 def on_search():
-    global add_button
     romaji = entry.get().strip()
     if not romaji:
         result_label.configure(text="❌ Enter a word.")
+        add_button.configure(state="disabled")
         return
 
+    result_label.configure(
+        text = "⏳ Loading..."
+        # text="✅ Kanji/Kana: ⏳ Loading...\n📖 Hiragana: ⏳ Loading...\n💡 Meaning: ⏳ Loading..."
+    )
+    add_button.configure(state="disabled")
+    
+    app.after(100, lambda: perform_search(romaji))
+
+def perform_search(romaji):
     kanji, reading, meaning = search_jisho(romaji)
     if kanji:
         result_label.configure(
             text=f"✅ Kanji/Kana: {kanji}\n📖 Hiragana: {reading}\n💡 Meaning: {meaning}"
         )
-
-        if add_button is None:
-            add_button = ctk.CTkButton(app, text="Add to Anki", command=lambda: on_add(reading, romaji, meaning), font=("Arial", 18))
-            add_button.pack(pady=10)
+        last_result.update({"reading": reading, "romaji": romaji, "meaning": meaning})
+        add_button.configure(state="normal")
     else:
         result_label.configure(text="❌ Word not found on Jisho.")
+        last_result.update({"reading": None, "romaji": None, "meaning": None})
+
+
 
 def on_add(hiragana, romaji, meaning):
+    result_label.configure(text="⏳ Adding to Anki...")
+    add_button.configure(state="disabled")
+
+    app.after(100, lambda: perform_add(hiragana, romaji, meaning))
+
+def perform_add(hiragana, romaji, meaning):
     result = add_to_anki(hiragana, romaji, meaning)
     if 'error' in result and result['error']:
         result_label.configure(text=f"⚠️ Anki Error: {result['error']}")
     else:
         result_label.configure(text="✅ Added to Anki.")
 
+    add_button.configure(state="normal")
+
+
+def on_add_key():
+    if all(last_result.values()):
+        on_add(last_result["reading"], last_result["romaji"], last_result["meaning"])
+    else:
+        result_label.configure(text="❌ Nothing to add. Search first.")
+
 search_button = ctk.CTkButton(app, text="Search", command=on_search, font=("Arial", 18))
 search_button.pack(pady=10)
+
+add_button = ctk.CTkButton(app, text="Add to Anki", command=on_add_key, font=("Arial", 18), state="disabled")
+add_button.pack(pady=10)
+
+# ---- Key Bindings ----
+app.bind("<Return>", lambda event: on_search())
+app.bind("<Control-Return>", lambda event: on_add_key())
 
 app.mainloop()
