@@ -73,7 +73,7 @@ pip install pyinstaller
 ### 2. Create the executable
 
 ```bash
-pyinstaller --noconfirm --onefile --windowed app.py
+pyinstaller --noconfirm --onefile --windowed jishoanki.py
 ```
 
 * The `.exe` will be in the `dist/` folder.
