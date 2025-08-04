@@ -1,0 +1,4 @@
+test_scripts/
+build/
+dist/
+*.spec
